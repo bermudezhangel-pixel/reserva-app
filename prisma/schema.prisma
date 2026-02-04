@@ -20,17 +20,14 @@ model Reservation {
   id        String            @id @default(cuid())
   spaceId   String
   space     Space             @relation(fields: [spaceId], references: [id])
-  
-  // Relación con User añadida aquí
   userId    String?
   user      User?             @relation(fields: [userId], references: [id])
-
   userName  String
   userEmail String
   userPhone String
   date      DateTime
-  startTime String            // Format: "HH:mm"
-  endTime   String            // Format: "HH:mm"
+  startTime String
+  endTime   String
   status    ReservationStatus @default(PENDING)
   createdAt DateTime          @default(now())
 }
@@ -42,10 +39,17 @@ enum ReservationStatus {
 }
 
 model User {
-  id           String        @id @default(cuid())
-  email        String        @unique
-  otp          String?       // Para el código por email
-  otpExpires   DateTime?     // Expiración del código
-  password     String?       // Opcional con el sistema OTP
-  reservations Reservation[] // Relación inversa con Reservation
+  id                String        @id @default(cuid())
+  email             String        @unique
+  name              String?
+  phone             String?
+  company           String?
+  taxId             String?       // RUC / NIT / CIF
+  billingAddress    String?
+  billingCity       String?
+  otp               String?
+  otpExpires        DateTime?
+  password          String?       
+  reservations      Reservation[]
+  createdAt         DateTime      @default(now())
 }
