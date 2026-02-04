@@ -26,10 +26,10 @@ export default function AdminPanel() {
   };
 
   const deleteSpace = async (id: string) => {
-    if (!confirm("¿Borrar este espacio? Se perderán sus reservas.")) return;
-    await fetch(`/api/spaces/${id}`, { method: 'DELETE' });
-    loadData();
-  };
+  if (!confirm("¿Borrar este espacio?")) return;
+  await fetch(`/api/spaces/${id}`, { method: 'DELETE' }); // Esto llama a la ruta que acabamos de corregir
+  loadData();
+};
 
   const createSpace = async () => {
     await fetch('/api/spaces', {
