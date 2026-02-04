@@ -1,25 +1,25 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
-export async function PUT(req: Request) {
-  try {
-    const body = await req.json();
-    const { email, name, phone, company, taxId, billingAddress, billingCity } = body;
-    
-    const updatedUser = await prisma.user.update({
-      where: { email },
-      data: { 
-        name, 
-        phone, 
-        company, 
-        taxId, 
-        billingAddress, 
-        billingCity 
-      }
-    });
+// OBTENER PERFIL
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const email = searchParams.get('email');
+  if (!email) return NextResponse.json({ error: "Email requerido" }, { status: 400 });
 
-    return NextResponse.json(updatedUser);
-  } catch (error) {
-    return NextResponse.json({ error: "Error al actualizar perfil" }, { status: 500 });
-  }
+  const user = await prisma.user.findUnique({ where: { email } });
+  return NextResponse.json(user);
+}
+
+// ACTUALIZAR PERFIL
+export async function PUT(req: Request) {
+  const body = await req.json();
+  const { email, ...data } = body;
+  
+  const updatedUser = await prisma.user.update({
+    where: { email },
+    data: data
+  });
+
+  return NextResponse.json(updatedUser);
 }

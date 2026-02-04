@@ -1,42 +1,79 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
+// [SECCIÓN: CREAR NUEVA RESERVA POR RANGO]
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { userName, userEmail, userPhone, date, spaceId } = body;
+    const { spaceId, userEmail, startDate, endDate } = body;
 
-    // 1. Buscamos al usuario que ya se logueó con el código
-    const user = await prisma.user.findUnique({
-      where: { email: userEmail }
+    // VALIDACIÓN BÁSICA DE ENTRADA
+    if (!spaceId || !userEmail || !startDate || !endDate) {
+      return NextResponse.json({ error: "Faltan campos obligatorios" }, { status: 400 });
+    }
+
+    // 1. Buscamos al usuario (Protección contra null)
+    const user = await prisma.user.findUnique({ 
+      where: { email: userEmail } 
     });
 
-    // 2. Creamos la reserva vinculada al espacio y al usuario
+    // Si el usuario no existe en la DB (por el reset), lo creamos mínimo con su email
+    // para que la reserva no falle
+    let finalUserId = user?.id;
+    let finalUserName = user?.name || "Cliente Nuevo";
+    let finalUserPhone = user?.phone || "Sin teléfono";
+
+    if (!user) {
+      const newUser = await prisma.user.create({
+        data: { email: userEmail, name: "Usuario Temporal" }
+      });
+      finalUserId = newUser.id;
+    }
+
+    // 2. Creamos la reserva con el nuevo esquema de fechas
     const newReservation = await prisma.reservation.create({
       data: {
         spaceId: spaceId,
-        userId: user?.id, // Vinculamos el ID del usuario
-        userName: userName,
+        userId: finalUserId,
         userEmail: userEmail,
-        userPhone: userPhone,
-        date: new Date(date),
+        userName: finalUserName,
+        userPhone: finalUserPhone,
+        // Forzamos las fechas a formato ISO para evitar errores de zona horaria
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        status: 'PENDING',
         startTime: "09:00", 
-        endTime: "10:00",
-        status: "PENDING"
+        endTime: "18:00"
       }
     });
 
-    return NextResponse.json(newReservation, { status: 201 });
+    return NextResponse.json(newReservation);
   } catch (error) {
-    console.error("Error:", error);
-    return NextResponse.json({ error: "Error al crear reserva" }, { status: 500 });
+    console.error("ERROR CRÍTICO AL RESERVAR:", error);
+    return NextResponse.json(
+      { error: "No se pudo procesar la reserva. Revisa la consola del servidor." }, 
+      { status: 500 }
+    );
   }
 }
 
+// [SECCIÓN: OBTENER TODAS LAS RESERVAS (PARA ADMIN)]
 export async function GET() {
-  const reservations = await prisma.reservation.findMany({
-    include: { space: true, user: true },
-    orderBy: { date: 'desc' }
-  });
-  return NextResponse.json(reservations);
+  try {
+    const reservations = await prisma.reservation.findMany({
+      include: { 
+        space: true, 
+        user: true 
+      },
+      orderBy: { 
+        startDate: 'desc' 
+      }
+    });
+    
+    // Si no hay nada, devolvemos array vacío en lugar de null para no romper el frontend
+    return NextResponse.json(reservations || []);
+  } catch (error) {
+    console.error("ERROR GET RESERVATIONS:", error);
+    return NextResponse.json({ error: "Error al obtener reservas" }, { status: 500 });
+  }
 }
