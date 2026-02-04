@@ -1,0 +1,37 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Space {
+  id             String        @id @default(cuid())
+  name           String
+  description    String
+  capacity       Int
+  pricePerHour   Float
+  reservations   Reservation[]
+}
+
+model Reservation {
+  id         String            @id @default(cuid())
+  spaceId    String
+  space      Space             @relation(fields: [spaceId], references: [id])
+  userName   String
+  userEmail  String
+  userPhone  String
+  date       DateTime
+  startTime  String            // Format: "HH:mm"
+  endTime    String            // Format: "HH:mm"
+  status     ReservationStatus @default(PENDING)
+  createdAt  DateTime          @default(now())
+}
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
