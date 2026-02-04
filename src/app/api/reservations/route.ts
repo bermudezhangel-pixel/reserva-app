@@ -7,38 +7,34 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { spaceId, userEmail, startDate, endDate } = body;
 
-    // VALIDACIÓN BÁSICA DE ENTRADA
+    // 1. Validación estricta para TypeScript
     if (!spaceId || !userEmail || !startDate || !endDate) {
       return NextResponse.json({ error: "Faltan campos obligatorios" }, { status: 400 });
     }
 
-    // 1. Buscamos al usuario (Protección contra null)
-    const user = await prisma.user.findUnique({ 
+    // 2. Buscamos al usuario (Protección contra null)
+    let user = await prisma.user.findUnique({ 
       where: { email: userEmail } 
     });
 
-    // Si el usuario no existe en la DB (por el reset), lo creamos mínimo con su email
-    // para que la reserva no falle
-    let finalUserId = user?.id;
-    let finalUserName = user?.name || "Cliente Nuevo";
-    let finalUserPhone = user?.phone || "Sin teléfono";
-
+    // 3. Si no existe (por el reset), lo creamos para evitar errores de relación
     if (!user) {
-      const newUser = await prisma.user.create({
-        data: { email: userEmail, name: "Usuario Temporal" }
+      user = await prisma.user.create({
+        data: { 
+          email: userEmail, 
+          name: "Usuario Temporal" 
+        }
       });
-      finalUserId = newUser.id;
     }
 
-    // 2. Creamos la reserva con el nuevo esquema de fechas
+    // 4. Creamos la reserva asegurando que los tipos coincidan con el Schema
     const newReservation = await prisma.reservation.create({
       data: {
         spaceId: spaceId,
-        userId: finalUserId,
+        userId: user.id, // Ahora estamos seguros de que existe
         userEmail: userEmail,
-        userName: finalUserName,
-        userPhone: finalUserPhone,
-        // Forzamos las fechas a formato ISO para evitar errores de zona horaria
+        userName: user.name || "Cliente Nuevo",
+        userPhone: user.phone || "Sin teléfono",
         startDate: new Date(startDate),
         endDate: new Date(endDate),
         status: 'PENDING',
@@ -51,7 +47,7 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error("ERROR CRÍTICO AL RESERVAR:", error);
     return NextResponse.json(
-      { error: "No se pudo procesar la reserva. Revisa la consola del servidor." }, 
+      { error: "No se pudo procesar la reserva." }, 
       { status: 500 }
     );
   }
@@ -70,7 +66,6 @@ export async function GET() {
       }
     });
     
-    // Si no hay nada, devolvemos array vacío en lugar de null para no romper el frontend
     return NextResponse.json(reservations || []);
   } catch (error) {
     console.error("ERROR GET RESERVATIONS:", error);
