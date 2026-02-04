@@ -2,6 +2,26 @@
 import { useState, useEffect } from 'react';
 import { translations, Locale } from '@/lib/translations';
 
+// Dentro del componente ReservePage, añade este estado:
+const [spaces, setSpaces] = useState<any[]>([]);
+
+// Carga los espacios al iniciar
+useEffect(() => {
+  fetch('/api/spaces').then(res => res.json()).then(data => setSpaces(data));
+}, []);
+
+// En el formulario, antes del nombre, añade:
+<select 
+  className="w-full border-2 border-slate-200 p-4 rounded-xl font-bold"
+  onChange={e => setForm({...form, spaceId: e.target.value})}
+  required
+>
+  <option value="">Selecciona un espacio / Choose a space</option>
+  {spaces.map(s => (
+    <option key={s.id} value={s.id}>{s.name} ({s.capacity} pax)</option>
+  ))}
+</select>
+
 // Añadimos las banderas a los idiomas
 const languageOptions: { code: Locale; label: string; flag: string }[] = [
   { code: 'en', label: 'English', flag: '🇺🇸' },
