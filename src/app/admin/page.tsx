@@ -1,464 +1,393 @@
 "use client";
 import { useState, useEffect } from 'react';
-
-// --- DICCIONARIO DE IDIOMAS ---
-// CORRECCIÓN: Las claves aquí ahora coinciden exactamente con los valores de 'tab'
-const translations: any = {
-  es: {
-    adminPanel: "Panel de Administración",
-    // Estas claves deben coincidir con los valores del estado 'tab'
-    reservas: "📅 Reservas",
-    espacios: "🏢 Inventario",
-    usuarios: "👥 Usuarios",
-    settings: "⚙️ Configuración",
-    
-    create: "Crear Nuevo",
-    edit: "Editar",
-    delete: "Eliminar",
-    save: "Guardar",
-    cancel: "Cancelar",
-    loading: "Cargando Sistema...",
-    confirmDelete: "¿Estás seguro de eliminar este registro?",
-    noData: "No hay datos disponibles"
-  },
-  en: {
-    adminPanel: "Admin Dashboard",
-    reservas: "📅 Reservations",
-    espacios: "🏢 Inventory",
-    usuarios: "👥 Users",
-    settings: "⚙️ Settings",
-
-    create: "Create New",
-    edit: "Edit",
-    delete: "Delete",
-    save: "Save",
-    cancel: "Cancel",
-    loading: "Loading System...",
-    confirmDelete: "Are you sure you want to delete this record?",
-    noData: "No data available"
-  }
-};
+import { useRouter } from 'next/navigation'; // Router para redireccionar
+import { useTheme } from '@/context/ThemeContext';
+import PageTransition from '@/components/PageTransition';
+import ImageUploader from '@/components/ImageUploader';
+import BackButton from '@/components/BackButton';
 
 export default function AdminDashboard() {
-  // --- ESTADOS GLOBALES ---
-  const [lang, setLang] = useState<'es' | 'en'>('es');
-  const [theme, setTheme] = useState<'light' | 'dark' | 'colorful'>('light');
-  const [appName, setAppName] = useState("Reserva App");
-  
-  // Estado de pestaña inicial
+  const { 
+    theme, changeTheme, lang, changeLang, 
+    logo, updateLogo, 
+    appTitle, appSubtitle, updateAppTexts,
+    customPalettes, updatePaletteColor, 
+    t 
+  } = useTheme();
+
+  const router = useRouter(); // Hook de navegación
+  const [authorized, setAuthorized] = useState(false); // Estado de seguridad
+
   const [tab, setTab] = useState('reservas');
   
-  const t = translations[lang];
-
-  // --- ESTADOS DE DATOS ---
-  // Inicializamos como arrays vacíos para evitar errores de map
-  const [reservations, setReservations] = useState<any[]>([]);
+  // Datos CRUD
   const [spaces, setSpaces] = useState<any[]>([]);
+  const [reservations, setReservations] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  
+  // UI States
+  const [modalOpen, setModalOpen] = useState(false);
+  const [targetCollection, setTargetCollection] = useState('espacios');
+  const [formData, setFormData] = useState<any>({});
   const [loading, setLoading] = useState(true);
 
-  // --- ESTADOS DE MODALES ---
-  const [modalOpen, setModalOpen] = useState(false);
-  const [modalType, setModalType] = useState<'create' | 'edit'>('create');
-  const [currentItem, setCurrentItem] = useState<any>(null);
-  const [targetCollection, setTargetCollection] = useState<'reservas' | 'espacios' | 'usuarios'>('reservas');
-  const [formData, setFormData] = useState<any>({});
+  // --- CAPA DE SEGURIDAD ---
+  useEffect(() => {
+    const checkAuth = async () => {
+      const adminEmail = localStorage.getItem('adminEmail');
+      
+      if (!adminEmail) {
+        router.push('/admin/login');
+        return;
+      }
 
-  // --- ESTILOS VISUALES ---
-  const getThemeClasses = () => {
-    switch(theme) {
-      case 'dark': return "bg-slate-900 text-white";
-      case 'colorful': return "bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white";
-      default: return "bg-slate-50 text-slate-900";
-    }
+      // Doble verificación: Consultamos a la API si el usuario sigue siendo admin
+      try {
+        const res = await fetch(`/api/user/profile?email=${adminEmail}`);
+        const user = await res.json();
+        
+        if (user && (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN')) {
+          setAuthorized(true);
+          fetchData(); // Solo cargamos datos si está autorizado
+        } else {
+          localStorage.removeItem('adminEmail'); // Token inválido
+          router.push('/admin/login');
+        }
+      } catch (error) {
+        router.push('/admin/login');
+      }
+    };
+
+    checkAuth();
+  }, [router]);
+
+  // LOGOUT
+  const handleLogout = () => {
+    localStorage.removeItem('adminEmail');
+    localStorage.removeItem('adminSession');
+    router.push('/admin/login');
   };
 
-  const getCardClasses = () => {
-    switch(theme) {
-      case 'dark': return "bg-slate-800 border-slate-700 text-white";
-      case 'colorful': return "bg-white/20 backdrop-blur-lg border-white/30 text-white placeholder-white shadow-xl";
-      default: return "bg-white border-slate-200 text-slate-900";
-    }
-  };
-
-  // --- CARGA DE DATOS ---
+  // FETCH DATA
   const fetchData = async () => {
     try {
-      const [resRes, resSpa, resUsers] = await Promise.all([
-        fetch('/api/reservations'),
-        fetch('/api/spaces'),
-        fetch('/api/users')
+      const [r, s, u] = await Promise.all([
+        fetch('/api/reservations').then(res => res.json()),
+        fetch('/api/spaces').then(res => res.json()),
+        fetch('/api/users').then(res => res.json())
       ]);
-      
-      const dRes = await resRes.json();
-      const dSpa = await resSpa.json();
-      const dUsers = await resUsers.json();
-
-      setReservations(Array.isArray(dRes) ? dRes : []);
-      setSpaces(Array.isArray(dSpa) ? dSpa : []);
-      setUsers(Array.isArray(dUsers) ? dUsers : []);
-    } catch (e) { console.error(e); }
+      setReservations(Array.isArray(r) ? r : []); 
+      setSpaces(Array.isArray(s) ? s : []); 
+      setUsers(Array.isArray(u) ? u : []);
+    } catch(e) { console.error(e); }
     setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, []);
-
-  // --- HELPERS ---
-  const formatDate = (d: any) => {
-    if(!d) return "--";
-    try {
-        const date = new Date(d);
-        if(isNaN(date.getTime())) return "Pendiente";
-        return date.toLocaleDateString(lang === 'es' ? 'es-ES' : 'en-US');
-    } catch { return "--"; }
-  };
-
-  // --- CRUD LÓGICA ---
-  const handleCreate = (collection: any) => {
-    setTargetCollection(collection);
-    setModalType('create');
-    setFormData({});
-    setModalOpen(true);
-  };
-
-  const handleEdit = (item: any, collection: any) => {
-    setTargetCollection(collection);
-    setModalType('edit');
-    setCurrentItem(item);
-    
-    if (collection === 'reservas') {
-      setFormData({
-        ...item,
-        startDate: item.startDate ? item.startDate.split('T')[0] : '',
-        endDate: item.endDate ? item.endDate.split('T')[0] : ''
-      });
-    } else {
-      setFormData(item);
-    }
-    setModalOpen(true);
-  };
-
+  // HANDLERS
+  const handleEdit = (item: any, collection: string) => { setTargetCollection(collection); setFormData(item); setModalOpen(true); };
+  const handleCreate = (collection: string) => { setTargetCollection(collection); setFormData({}); setModalOpen(true); };
+  
   const handleDelete = async (id: string, collection: string) => {
-    if (!confirm(t.confirmDelete)) return;
-    
-    let endpoint = '';
-    if (collection === 'reservas') endpoint = `/api/reservations/${id}`;
-    if (collection === 'espacios') endpoint = `/api/spaces/${id}`;
-    if (collection === 'usuarios') endpoint = `/api/users/${id}`;
-
-    await fetch(endpoint, { method: 'DELETE' });
+    if(!confirm(t.delete + "?")) return;
+    const endpoint = collection === 'reservas' ? 'reservations' : collection;
+    await fetch(`/api/${endpoint}/${id}`, { method: 'DELETE' });
     fetchData();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    let endpoint = '';
-    let method = modalType === 'create' ? 'POST' : 'PUT';
-
-    if (targetCollection === 'reservas') {
-      endpoint = modalType === 'create' ? '/api/reservations' : `/api/reservations/${currentItem.id}`;
-      if (modalType === 'edit') method = 'PATCH'; 
-    }
-    if (targetCollection === 'espacios') {
-      endpoint = modalType === 'create' ? '/api/spaces' : `/api/spaces/${currentItem.id}`;
-    }
-    if (targetCollection === 'usuarios') {
-      endpoint = modalType === 'create' ? '/api/users' : `/api/users/${currentItem.id}`;
-    }
-
-    // Pequeño ajuste para reservas manuales
-    const payload = { ...formData };
-    if (targetCollection === 'reservas' && !payload.userEmail && modalType === 'create') {
-        payload.userEmail = "admin@manual.com"; 
-    }
-
-    try {
-      await fetch(endpoint, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      setModalOpen(false);
-      fetchData();
-    } catch (error) {
-      alert("Error en la operación");
-    }
+    const endpoint = targetCollection === 'reservas' ? 'reservations' : targetCollection;
+    const url = formData.id ? `/api/${endpoint}/${formData.id}` : `/api/${endpoint}`;
+    const method = formData.id ? 'PUT' : 'POST';
+    
+    await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(formData) });
+    setModalOpen(false);
+    fetchData();
   };
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center font-black animate-pulse uppercase tracking-widest">{t.loading}</div>;
+  // ESTILOS DINÁMICOS
+  const glassClass = "backdrop-blur-xl border border-current/10 shadow-xl transition-all duration-300";
+  const inputClass = "w-full p-3 rounded-xl bg-current/5 border border-current/10 font-bold outline-none focus:bg-current/10 transition-colors placeholder:opacity-40";
+
+  // Si no está autorizado o está cargando, mostramos pantalla de carga
+  if (!authorized || loading) return <div className="min-h-screen flex items-center justify-center font-black animate-pulse uppercase tracking-widest">{t.loading}...</div>;
 
   return (
-    <div className={`min-h-screen transition-all duration-500 ${getThemeClasses()} p-4 md:p-10 font-sans`}>
-      <div className="max-w-7xl mx-auto">
+    <PageTransition>
+      <div className="p-6 md:p-12 max-w-7xl mx-auto min-h-screen">
+        {/* BOTÓN VOLVER al perfil (o salir) */}
+        <BackButton route="/profile" />
         
         {/* --- HEADER --- */}
-        <header className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
-          <div>
-            <h1 className="text-4xl font-black italic tracking-tighter uppercase">{appName}</h1>
-            <p className="text-xs font-bold opacity-60 uppercase tracking-widest">{t.adminPanel}</p>
+        <header className="flex flex-col xl:flex-row justify-between items-center mb-12 pl-0 md:pl-20 gap-8 animate-in slide-in-from-top duration-500">
+          <div className="flex items-center gap-6 text-center md:text-left flex-col md:flex-row">
+             {logo ? (
+               <img src={logo} alt="Logo" className="h-20 w-auto object-contain drop-shadow-lg" />
+             ) : (
+               <div className="h-20 w-20 bg-current/10 rounded-2xl flex items-center justify-center text-4xl">💎</div>
+             )}
+             <div>
+                <h1 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter leading-none">{appTitle}</h1>
+                <p className="text-xs font-bold opacity-60 uppercase tracking-[0.3em] mt-1">{appSubtitle}</p>
+             </div>
           </div>
+          
+          <div className="flex flex-col items-center xl:items-end gap-4">
+             <div className="flex gap-2">
+                {/* Selector Idioma */}
+                <div className="flex bg-current/5 p-1.5 rounded-2xl gap-1">
+                    {(['es', 'en'] as const).map(l => (
+                    <button key={l} onClick={() => changeLang(l)} 
+                        className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${lang === l ? 'bg-[var(--color-primary)] text-white shadow-lg' : 'opacity-50 hover:opacity-100'}`}>
+                        {l.toUpperCase()}
+                    </button>
+                    ))}
+                </div>
+                {/* BOTÓN LOGOUT */}
+                <button onClick={handleLogout} className="bg-red-500/10 text-red-500 px-4 py-2 rounded-2xl text-xs font-black uppercase hover:bg-red-500 hover:text-white transition-all">
+                    Salir 🔒
+                </button>
+             </div>
 
-          <div className="flex gap-4 items-center">
-            {/* Selector Idioma */}
-            <button onClick={() => setLang(lang === 'es' ? 'en' : 'es')} className="font-bold text-xs bg-black/10 px-3 py-1 rounded-lg hover:bg-black/20 transition-all">
-              {lang === 'es' ? '🇺🇸 EN' : '🇪🇸 ES'}
-            </button>
-            
-            {/* Selector Tema */}
-            <div className="flex bg-black/5 p-1 rounded-xl">
-              <button onClick={() => setTheme('light')} className={`p-2 rounded-lg transition-all ${theme === 'light' ? 'bg-white shadow-md scale-110' : 'hover:bg-black/10'}`}>☀️</button>
-              <button onClick={() => setTheme('dark')} className={`p-2 rounded-lg transition-all ${theme === 'dark' ? 'bg-slate-700 shadow-md scale-110' : 'hover:bg-black/10'}`}>🌑</button>
-              <button onClick={() => setTheme('colorful')} className={`p-2 rounded-lg transition-all ${theme === 'colorful' ? 'bg-white/30 shadow-md scale-110' : 'hover:bg-black/10'}`}>🌈</button>
-            </div>
+             {/* Navegación Tabs */}
+             <div className="flex flex-wrap justify-center gap-2">
+                {['reservas', 'espacios', 'usuarios', 'design'].map(tb => (
+                  <button key={tb} onClick={() => setTab(tb)}
+                    className={`px-5 py-3 rounded-2xl font-bold uppercase text-[10px] md:text-xs transition-all border border-transparent ${
+                      tab === tb ? 'bg-[var(--color-primary)] text-white shadow-lg scale-105' : 'bg-current/5 hover:bg-current/10 hover:scale-105'
+                    }`}>
+                    {t[tb] || tb}
+                  </button>
+                ))}
+             </div>
           </div>
         </header>
 
-        {/* --- TABS (CORREGIDO) --- */}
-        <div className="flex flex-wrap gap-2 mb-8">
-          {['reservas', 'espacios', 'usuarios', 'settings'].map((tb) => (
-            <button
-              key={tb}
-              onClick={() => setTab(tb)}
-              className={`px-6 py-3 rounded-2xl font-black uppercase text-xs tracking-widest transition-all hover:scale-105 active:scale-95 ${
-                tab === tb 
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' 
-                  : `bg-black/5 hover:bg-black/10 ${theme === 'dark' ? 'text-white' : 'text-slate-600'}`
-              }`}
-            >
-              {/* Aquí usamos tb como clave para buscar en el diccionario t */}
-              {t[tb]} 
-            </button>
-          ))}
-        </div>
-
-        {/* --- CONTENIDO PRINCIPAL --- */}
-        <div className="space-y-6">
-          
-          {/* BOTÓN CREAR (No visible en Settings) */}
-          {tab !== 'settings' && (
-            <div className="flex justify-end">
-              <button 
-                onClick={() => handleCreate(tab)} 
-                className="bg-green-500 text-white px-6 py-3 rounded-xl font-black uppercase text-xs shadow-lg hover:bg-green-600 transition-all hover:-translate-y-1 active:scale-95"
-              >
-                + {t.create}
-              </button>
-            </div>
-          )}
-
-          {/* VISTA: RESERVAS */}
-          {tab === 'reservas' && (
-            <div className="grid gap-4">
-              {reservations.length === 0 && <p className="text-center opacity-50 font-bold py-10">{t.noData}</p>}
-              {reservations.map((res: any) => (
-                <div key={res.id} className={`${getCardClasses()} p-6 rounded-[2rem] border shadow-sm flex flex-col md:flex-row justify-between items-center gap-4 hover:shadow-xl transition-all`}>
-                  <div className="flex-1">
-                    <h3 className="font-black text-xl">{res.userName || 'Usuario'}</h3>
-                    <p className="opacity-60 text-xs font-bold uppercase tracking-wider">{res.userEmail}</p>
-                    <div className="mt-3 flex gap-2">
-                       <span className="bg-blue-500/10 text-blue-500 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-tight">{res.space?.name}</span>
-                       <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-tight ${res.status === 'CONFIRMED' ? 'bg-green-100 text-green-600' : res.status === 'CANCELLED' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
-                         {res.status}
-                       </span>
-                    </div>
-                    <p className="mt-3 text-xs font-bold flex items-center gap-2">
-                      <span className="opacity-50">📅</span> {formatDate(res.startDate)} ➜ {formatDate(res.endDate)}
-                    </p>
+        {/* --- PESTAÑA DISEÑO --- */}
+        {tab === 'design' && (
+          <div className={`p-8 md:p-12 rounded-[3rem] ${glassClass} space-y-12 animate-in fade-in zoom-in-95`}>
+            
+            {/* 1. IDENTIDAD */}
+            <section className="grid md:grid-cols-2 gap-8">
+               <div className="p-8 rounded-3xl bg-current/5 border border-current/5">
+                  <h2 className="text-xl font-black uppercase mb-2 flex items-center gap-2">🖼️ {t.appIdentity}</h2>
+                  <p className="text-xs opacity-60 mb-6">{t.logoDesc}</p>
+                  <div className="flex items-center gap-6">
+                      <div className="w-24 h-24 bg-white rounded-2xl flex items-center justify-center shadow-inner overflow-hidden flex-shrink-0 p-2">
+                          {logo && <img src={logo} className="w-full h-full object-contain" />}
+                      </div>
+                      <div className="flex-1">
+                          <ImageUploader existingImages={[]} onImagesChange={(imgs: string[]) => imgs.length > 0 && updateLogo(imgs[0])} />
+                      </div>
                   </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => handleEdit(res, 'reservas')} className="bg-slate-100 text-slate-600 p-3 rounded-xl hover:bg-blue-500 hover:text-white transition-all shadow-sm">✏️</button>
-                    <button onClick={() => handleDelete(res.id, 'reservas')} className="bg-red-50 text-red-500 p-3 rounded-xl hover:bg-red-500 hover:text-white transition-all shadow-sm">🗑️</button>
+               </div>
+
+               <div className="p-8 rounded-3xl bg-current/5 border border-current/5">
+                  <h2 className="text-xl font-black uppercase mb-6 flex items-center gap-2">📝 {t.titles}</h2>
+                  <div className="space-y-4">
+                      <div>
+                        <label className="text-[10px] font-black uppercase opacity-50 ml-2">{t.titleLabel}</label>
+                        <input className={inputClass} value={appTitle} onChange={(e) => updateAppTexts(e.target.value, appSubtitle)} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black uppercase opacity-50 ml-2">{t.subtitleLabel}</label>
+                        <input className={inputClass} value={appSubtitle} onChange={(e) => updateAppTexts(appTitle, e.target.value)} />
+                      </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
+               </div>
+            </section>
 
-          {/* VISTA: ESPACIOS (INVENTARIO) */}
-          {tab === 'espacios' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {spaces.map((s: any) => (
-                <div key={s.id} className={`${getCardClasses()} p-8 rounded-[2.5rem] border shadow-sm hover:shadow-2xl hover:-translate-y-1 transition-all group overflow-hidden relative`}>
-                  {s.image ? (
-                    <img src={s.image} alt={s.name} className="w-full h-40 object-cover rounded-2xl mb-5 shadow-sm" />
-                  ) : (
-                    <div className="w-full h-40 bg-black/5 rounded-2xl mb-5 flex items-center justify-center text-4xl opacity-20">🏢</div>
-                  )}
-                  
-                  <h3 className="text-2xl font-black mb-2 leading-none">{s.name}</h3>
-                  <p className="text-xs opacity-60 mb-5 line-clamp-2 leading-relaxed">{s.description || "Sin descripción"}</p>
-                  
-                  <div className="flex gap-2 mb-6">
-                    <span className="bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm shadow-blue-200">${s.pricePerHour}/h</span>
-                    <span className="bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg text-xs font-bold">👥 {s.capacity}</span>
-                  </div>
-                  
-                  {s.equipment && (
-                     <div className="mb-6 p-3 bg-black/5 rounded-xl text-[10px] font-bold opacity-70">
-                        🔧 {s.equipment}
-                     </div>
-                  )}
-                  
-                  <div className="flex gap-3">
-                    <button onClick={() => handleEdit(s, 'espacios')} className="flex-1 bg-slate-900 text-white py-3 rounded-xl font-bold text-xs uppercase hover:bg-blue-600 transition-all shadow-lg">{t.edit}</button>
-                    <button onClick={() => handleDelete(s.id, 'espacios')} className="px-4 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all">🗑️</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+            <hr className="border-current/10" />
 
-          {/* VISTA: USUARIOS */}
-          {tab === 'usuarios' && (
-            <div className={`${getCardClasses()} rounded-[2.5rem] p-8 overflow-hidden`}>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-black/10 text-[10px] uppercase font-black tracking-widest opacity-50">
-                      <th className="pb-4 pl-2">Usuario</th>
-                      <th className="pb-4">Rol</th>
-                      <th className="pb-4">Reservas</th>
-                      <th className="pb-4 text-right pr-2">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-black/5">
-                    {users.map((u: any) => (
-                      <tr key={u.id} className="group hover:bg-black/5 transition-colors">
-                        <td className="py-4 pl-2">
-                          <div className="font-bold text-sm">{u.name || 'Sin nombre'}</div>
-                          <div className="text-[10px] opacity-60 font-mono">{u.email}</div>
-                        </td>
-                        <td className="py-4">
-                          <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wide ${
-                            u.role === 'SUPER_ADMIN' ? 'bg-purple-100 text-purple-700 border border-purple-200' : 
-                            u.role === 'ADMIN' ? 'bg-blue-100 text-blue-700 border border-blue-200' : 
-                            'bg-slate-100 text-slate-600 border border-slate-200'
-                          }`}>
-                            {u.role || 'USER'}
-                          </span>
-                        </td>
-                        <td className="py-4 font-mono font-bold text-xs opacity-70 pl-4">{u.reservations?.length || 0}</td>
-                        <td className="py-4 text-right pr-2 flex justify-end gap-2">
-                          <button onClick={() => handleEdit(u, 'usuarios')} className="text-slate-400 hover:text-blue-500 hover:bg-blue-50 p-2 rounded-lg transition-all">✏️</button>
-                          <button onClick={() => handleDelete(u.id, 'usuarios')} className="text-slate-400 hover:text-red-500 hover:bg-red-50 p-2 rounded-lg transition-all">🗑️</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+            {/* 2. TEMAS Y COLORES */}
+            <section>
+                <h2 className="text-3xl font-black uppercase mb-8 text-center">🎨 {t.design} & Themes</h2>
+                <div className="grid lg:grid-cols-3 gap-6">
+                {(['light', 'dark', 'colorful'] as const).map((tName) => (
+                    <div key={tName} className={`relative p-8 rounded-[2rem] transition-all duration-500 overflow-hidden group ${
+                        theme === tName ? 'ring-4 ring-[var(--color-primary)] scale-105 shadow-2xl bg-current/5' : 'bg-current/5 opacity-70 hover:opacity-100 hover:scale-[1.02]'
+                    }`}>
+                        {theme === tName && <div className="absolute top-0 right-0 bg-[var(--color-primary)] text-white text-[9px] font-black px-4 py-2 rounded-bl-2xl uppercase tracking-widest">{t.active}</div>}
+                        
+                        <h3 className="font-black uppercase text-2xl mb-6">{tName}</h3>
+                        
+                        <div className="space-y-4 relative z-10">
+                            {[
+                              { key: 'primary', label: t.primaryColor },
+                              { key: 'background', label: t.bgColor },
+                              { key: 'card', label: t.cardColor },
+                              { key: 'text', label: t.textColor }
+                            ].map((col) => (
+                              <div key={col.key} className="flex items-center gap-3 bg-white/50 dark:bg-black/20 p-2 rounded-xl">
+                                  <input type="color" 
+                                    value={customPalettes[tName][col.key as keyof typeof customPalettes['light']]} 
+                                    onChange={(e) => updatePaletteColor(tName, col.key as any, e.target.value)} 
+                                    className="w-10 h-10 rounded-lg cursor-pointer border-none bg-transparent" />
+                                  <div className="flex-1">
+                                    <p className="text-[9px] font-black uppercase opacity-50 leading-none">{col.label}</p>
+                                    <p className="text-[10px] font-mono opacity-80">{customPalettes[tName][col.key as keyof typeof customPalettes['light']]}</p>
+                                  </div>
+                              </div>
+                            ))}
+                        </div>
 
-          {/* VISTA: SETTINGS */}
-          {tab === 'settings' && (
-            <div className={`${getCardClasses()} p-10 rounded-[3rem] max-w-2xl mx-auto shadow-2xl`}>
-              <h2 className="text-3xl font-black mb-8 italic">{t.settings}</h2>
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <label className="text-xs font-black uppercase opacity-50 ml-3">{t.systemName}</label>
-                  <input value={appName} onChange={(e) => setAppName(e.target.value)} className="w-full p-4 rounded-2xl bg-black/5 font-bold outline-none focus:ring-4 focus:ring-blue-500/20 transition-all" />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-black uppercase opacity-50 ml-3">{t.logoUrl}</label>
-                  <input placeholder="https://..." className="w-full p-4 rounded-2xl bg-black/5 font-bold outline-none focus:ring-4 focus:ring-blue-500/20 transition-all" />
-                </div>
-                
-                <div className="bg-amber-50 text-amber-800 p-5 rounded-2xl text-xs font-bold border border-amber-100 flex gap-3 items-center">
-                  <span className="text-2xl">⚠️</span>
-                  <p>La persistencia de configuración global requiere implementar el endpoint del modelo SystemConfig en la base de datos.</p>
-                </div>
-                
-                <button className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black uppercase tracking-widest hover:scale-105 hover:bg-blue-600 transition-all shadow-xl">
-                  {t.save}
-                </button>
-              </div>
-            </div>
-          )}
-
-        </div>
-
-        {/* --- MODAL UNIVERSAL --- */}
-        {modalOpen && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
-            <div className={`bg-white text-slate-900 p-8 md:p-10 rounded-[2.5rem] w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-200 border-t-[12px] ${targetCollection === 'usuarios' ? 'border-purple-500' : 'border-blue-500'}`}>
-              <h2 className="text-3xl font-black mb-8 uppercase tracking-tight leading-none">
-                {modalType === 'create' ? t.create : t.edit} <br/>
-                <span className={targetCollection === 'usuarios' ? 'text-purple-600' : 'text-blue-600'}>{targetCollection}</span>
-              </h2>
-              
-              <form onSubmit={handleSubmit} className="space-y-4">
-                
-                {/* CAMPOS RESERVAS */}
-                {targetCollection === 'reservas' && (
-                  <>
-                    <input className="w-full bg-slate-50 p-4 rounded-2xl font-bold border-2 border-slate-100 focus:border-blue-500 outline-none transition-all" type="email" placeholder="Email Usuario" required value={formData.userEmail || ''} onChange={e => setFormData({...formData, userEmail: e.target.value})} />
-                    <select className="w-full bg-slate-50 p-4 rounded-2xl font-bold border-2 border-slate-100 outline-none" required value={formData.spaceId || ''} onChange={e => setFormData({...formData, spaceId: e.target.value})}>
-                      <option value="">Selecciona Espacio</option>
-                      {spaces.map((s:any) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                    <div className="grid grid-cols-2 gap-3">
-                       <div className="space-y-1">
-                          <label className="text-[10px] font-black uppercase opacity-40 ml-2">Inicio</label>
-                          <input className="w-full bg-slate-50 p-3 rounded-2xl font-bold border-2 border-slate-100" type="date" required value={formData.startDate || ''} onChange={e => setFormData({...formData, startDate: e.target.value})} />
-                       </div>
-                       <div className="space-y-1">
-                          <label className="text-[10px] font-black uppercase opacity-40 ml-2">Fin</label>
-                          <input className="w-full bg-slate-50 p-3 rounded-2xl font-bold border-2 border-slate-100" type="date" required value={formData.endDate || ''} onChange={e => setFormData({...formData, endDate: e.target.value})} />
-                       </div>
+                        <button onClick={() => changeTheme(tName)} className={`w-full mt-8 py-4 rounded-xl font-black uppercase text-xs transition-all shadow-lg ${
+                            theme === tName ? 'bg-green-500 text-white cursor-default' : 'bg-slate-900 text-white hover:bg-[var(--color-primary)]'
+                        }`}>
+                            {theme === tName ? '✓ ' + t.active : t.activate}
+                        </button>
                     </div>
-                    {modalType === 'edit' && (
-                      <select className="w-full bg-slate-50 p-4 rounded-2xl font-bold border-2 border-slate-100 outline-none" value={formData.status || ''} onChange={e => setFormData({...formData, status: e.target.value})}>
-                        <option value="PENDING">Pendiente</option>
-                        <option value="CONFIRMED">Confirmada</option>
-                        <option value="CANCELLED">Cancelada</option>
-                      </select>
-                    )}
-                  </>
-                )}
-
-                {/* CAMPOS ESPACIOS */}
-                {targetCollection === 'espacios' && (
-                  <>
-                    <input className="w-full bg-slate-50 p-4 rounded-2xl font-bold border-2 border-slate-100 focus:border-blue-500 outline-none transition-all" placeholder="Nombre del Salón" required value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} />
-                    <textarea className="w-full bg-slate-50 p-4 rounded-2xl font-bold border-2 border-slate-100 outline-none transition-all" placeholder="Descripción breve..." rows={2} value={formData.description || ''} onChange={e => setFormData({...formData, description: e.target.value})} />
-                    <input className="w-full bg-slate-50 p-4 rounded-2xl font-bold border-2 border-slate-100 outline-none text-xs" placeholder="URL Imagen (https://...)" value={formData.image || ''} onChange={e => setFormData({...formData, image: e.target.value})} />
-                    
-                    <div className="grid grid-cols-2 gap-3">
-                      <input className="bg-slate-50 p-4 rounded-2xl font-bold border-2 border-slate-100 outline-none" type="number" placeholder="Capacidad (pax)" required value={formData.capacity || ''} onChange={e => setFormData({...formData, capacity: e.target.value})} />
-                      <input className="bg-slate-50 p-4 rounded-2xl font-bold border-2 border-slate-100 outline-none" type="number" placeholder="Precio ($/h)" required value={formData.pricePerHour || ''} onChange={e => setFormData({...formData, pricePerHour: e.target.value})} />
-                    </div>
-                    <input className="w-full bg-slate-50 p-4 rounded-2xl font-bold border-2 border-slate-100 outline-none" placeholder="Equipamiento (separado por comas)" value={formData.equipment || ''} onChange={e => setFormData({...formData, equipment: e.target.value})} />
-                  </>
-                )}
-
-                {/* CAMPOS USUARIOS */}
-                {targetCollection === 'usuarios' && (
-                  <>
-                    <input className="w-full bg-slate-50 p-4 rounded-2xl font-bold border-2 border-slate-100 focus:border-purple-500 outline-none transition-all" placeholder="Nombre Completo" required value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} />
-                    <input className="w-full bg-slate-50 p-4 rounded-2xl font-bold border-2 border-slate-100 outline-none" type="email" placeholder="Correo Electrónico" required value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} />
-                    <input className="w-full bg-slate-50 p-4 rounded-2xl font-bold border-2 border-slate-100 outline-none" placeholder="Teléfono" value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} />
-                    
-                    <div className="space-y-1 pt-2">
-                        <label className="text-xs font-black uppercase text-slate-400 ml-3">Nivel de Acceso</label>
-                        <select className="w-full bg-slate-50 p-4 rounded-2xl font-bold border-2 border-slate-100 outline-none focus:border-purple-500" value={formData.role || 'USER'} onChange={e => setFormData({...formData, role: e.target.value})}>
-                        <option value="USER">Usuario (Cliente)</option>
-                        <option value="ADMIN">Administrador</option>
-                        <option value="SUPER_ADMIN">Super Admin</option>
-                        </select>
-                    </div>
-                  </>
-                )}
-
-                <div className="flex gap-3 pt-6">
-                  <button type="button" onClick={() => setModalOpen(false)} className="flex-1 bg-slate-100 text-slate-500 py-4 rounded-2xl font-black uppercase text-xs hover:bg-slate-200 transition-colors">{t.cancel}</button>
-                  <button type="submit" className={`flex-1 text-white py-4 rounded-2xl font-black uppercase text-xs shadow-lg transition-all hover:scale-105 ${targetCollection === 'usuarios' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'}`}>{t.save}</button>
+                ))}
                 </div>
-              </form>
-            </div>
+            </section>
           </div>
         )}
+
+        {/* --- PESTAÑA INVENTARIO --- */}
+        {tab === 'espacios' && (
+            <div className="space-y-8 animate-in slide-in-from-bottom duration-500">
+                <div className="flex justify-between items-center">
+                   <h2 className="text-3xl font-black uppercase italic">{t.inventory}</h2>
+                   <button onClick={() => handleCreate('espacios')} className="bg-[var(--color-primary)] text-white px-8 py-3 rounded-2xl font-black uppercase text-xs shadow-lg hover:brightness-110 transition-all">+ {t.create}</button>
+                </div>
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    {spaces.map(s => (
+                        <div key={s.id} className={`p-6 rounded-[2.5rem] ${glassClass} group hover:-translate-y-2`}>
+                             <div className="h-48 bg-current/5 rounded-2xl mb-5 overflow-hidden relative">
+                                {s.images?.[0] ? <img src={s.images[0]} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" /> : <div className="flex items-center justify-center h-full text-4xl opacity-20">🏢</div>}
+                                <div className="absolute top-3 right-3 bg-white/90 text-black px-3 py-1 rounded-lg text-xs font-black shadow-sm">${s.pricePerHour}/h</div>
+                             </div>
+                             <h3 className="font-black text-2xl leading-none mb-2">{s.name}</h3>
+                             <div className="flex gap-2 mb-6">
+                               <span className="text-[10px] font-black bg-current/5 px-2 py-1 rounded uppercase opacity-60">👥 {s.capacity} Pax</span>
+                             </div>
+                             <div className="flex gap-3">
+                                <button onClick={() => handleEdit(s, 'espacios')} className="flex-1 bg-current/5 py-3 rounded-xl text-xs font-black uppercase hover:bg-current/10">{t.edit}</button>
+                                <button onClick={() => handleDelete(s.id, 'espacios')} className="px-5 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-colors">🗑️</button>
+                             </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )}
+
+        {/* --- PESTAÑA USUARIOS --- */}
+        {tab === 'usuarios' && (
+             <div className="space-y-8 animate-in slide-in-from-bottom duration-500">
+                <div className="flex justify-between items-center">
+                   <h2 className="text-3xl font-black uppercase italic">{t.users}</h2>
+                   <button onClick={() => handleCreate('usuarios')} className="bg-[var(--color-primary)] text-white px-8 py-3 rounded-2xl font-black uppercase text-xs shadow-lg hover:brightness-110 transition-all">+ {t.create}</button>
+                </div>
+                <div className={`p-8 rounded-[2.5rem] ${glassClass}`}>
+                    <table className="w-full text-left">
+                       <thead>
+                          <tr className="text-[10px] uppercase opacity-40 border-b border-current/10"><th className="pb-4 pl-4">{t.name}</th><th className="pb-4">{t.role}</th><th className="pb-4 text-right pr-4">Action</th></tr>
+                       </thead>
+                       <tbody className="divide-y divide-current/5">
+                        {users.map(u => (
+                            <tr key={u.id} className="group hover:bg-current/5 transition-colors">
+                                <td className="py-4 pl-4"><p className="font-bold">{u.name}</p><p className="text-[10px] opacity-50 font-mono">{u.email}</p></td>
+                                <td className="py-4"><span className="text-[9px] font-black bg-current/10 px-2 py-1 rounded uppercase">{u.role}</span></td>
+                                <td className="py-4 text-right pr-4 gap-2 flex justify-end">
+                                    <button onClick={() => handleEdit(u, 'usuarios')} className="text-xs font-black opacity-40 hover:opacity-100 hover:text-[var(--color-primary)]">✏️</button>
+                                    <button onClick={() => handleDelete(u.id, 'usuarios')} className="text-xs font-black opacity-40 hover:opacity-100 hover:text-red-500">❌</button>
+                                </td>
+                            </tr>
+                        ))}
+                       </tbody>
+                    </table>
+                </div>
+             </div>
+        )}
+
+        {/* --- PESTAÑA RESERVAS --- */}
+        {tab === 'reservas' && (
+             <div className="space-y-8 animate-in slide-in-from-bottom duration-500">
+                <div className="flex justify-between items-center">
+                   <h2 className="text-3xl font-black uppercase italic">{t.reservations}</h2>
+                   <button onClick={() => handleCreate('reservas')} className="bg-[var(--color-primary)] text-white px-8 py-3 rounded-2xl font-black uppercase text-xs shadow-lg hover:brightness-110 transition-all">+ {t.create}</button>
+                </div>
+                <div className="grid gap-4">
+                    {reservations.map(res => (
+                        <div key={res.id} className={`p-6 rounded-[2rem] ${glassClass} flex flex-col md:flex-row justify-between items-center gap-4 hover:border-current/20`}>
+                            <div className="flex-1">
+                                <h3 className="font-black text-xl">{res.userName || 'Unknown'}</h3>
+                                <p className="text-xs font-bold opacity-60 mb-2">{res.space?.name}</p>
+                                <div className="flex gap-2">
+                                   <span className="bg-current/5 text-[10px] font-black px-2 py-1 rounded uppercase">{new Date(res.startDate).toLocaleDateString()}</span>
+                                   <span className={`text-[10px] font-black px-2 py-1 rounded uppercase ${res.status === 'CONFIRMED' ? 'bg-green-500/20 text-green-600' : 'bg-orange-500/20 text-orange-600'}`}>{res.status}</span>
+                                </div>
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={() => handleEdit(res, 'reservas')} className="bg-current/5 px-6 py-3 rounded-xl text-xs font-black uppercase hover:bg-current/10 transition-colors">{t.edit}</button>
+                                <button onClick={() => handleDelete(res.id, 'reservas')} className="bg-red-500/10 text-red-500 px-4 py-3 rounded-xl text-xs font-bold hover:bg-red-500 hover:text-white transition-colors">🗑️</button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+             </div>
+        )}
+
+        {/* --- MODAL --- */}
+        {modalOpen && (
+           <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in zoom-in-95 duration-200">
+              <div className={`p-8 md:p-10 rounded-[2.5rem] w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto border-t-8 border-[var(--color-primary)] bg-[var(--bg-card)] text-[var(--text-main)]`}>
+                 <h2 className="text-3xl font-black uppercase mb-8">{formData.id ? t.edit : t.create} <span className="text-[var(--color-primary)]">{targetCollection}</span></h2>
+                 <form onSubmit={handleSubmit} className="space-y-5">
+                    
+                    {targetCollection === 'espacios' && (
+                        <>
+                           <input placeholder={t.name} className={inputClass} value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} />
+                           <textarea placeholder={t.desc} className={inputClass} rows={2} value={formData.description || ''} onChange={e => setFormData({...formData, description: e.target.value})} />
+                           <div className="grid grid-cols-2 gap-4">
+                               <input type="number" placeholder={t.cap} className={inputClass} value={formData.capacity || ''} onChange={e => setFormData({...formData, capacity: e.target.value})} />
+                               <input type="number" placeholder={t.price} className={inputClass} value={formData.pricePerHour || ''} onChange={e => setFormData({...formData, pricePerHour: e.target.value})} />
+                           </div>
+                           <div className="bg-current/5 p-4 rounded-2xl">
+                              <label className="text-[10px] font-black uppercase opacity-50 block mb-3">Fotos</label>
+                              <ImageUploader existingImages={formData.images || []} onImagesChange={(imgs: string[]) => setFormData({...formData, images: imgs})} />
+                           </div>
+                           <input placeholder={t.equip} className={inputClass} value={formData.equipment || ''} onChange={e => setFormData({...formData, equipment: e.target.value})} />
+                        </>
+                    )}
+                    
+                    {targetCollection === 'usuarios' && (
+                        <>
+                           <input placeholder={t.name} className={inputClass} value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} />
+                           <input type="email" placeholder={t.email} className={inputClass} value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} />
+                           <input placeholder={t.phone} className={inputClass} value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} />
+                           <select className={inputClass} value={formData.role || 'USER'} onChange={e => setFormData({...formData, role: e.target.value})}>
+                               <option value="USER">USER</option><option value="ADMIN">ADMIN</option><option value="SUPER_ADMIN">SUPER_ADMIN</option>
+                           </select>
+                        </>
+                    )}
+
+                    {targetCollection === 'reservas' && (
+                        <>
+                           <input type="email" placeholder={t.email} className={inputClass} value={formData.userEmail || ''} onChange={e => setFormData({...formData, userEmail: e.target.value})} />
+                           <select className={inputClass} value={formData.spaceId || ''} onChange={e => setFormData({...formData, spaceId: e.target.value})}>
+                               <option value="">Select Space</option>
+                               {spaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                           </select>
+                           <div className="grid grid-cols-2 gap-4">
+                               <input type="date" className={inputClass} value={formData.startDate || ''} onChange={e => setFormData({...formData, startDate: e.target.value})} />
+                               <input type="date" className={inputClass} value={formData.endDate || ''} onChange={e => setFormData({...formData, endDate: e.target.value})} />
+                           </div>
+                           <select className={inputClass} value={formData.status || 'PENDING'} onChange={e => setFormData({...formData, status: e.target.value})}>
+                               <option value="PENDING">PENDING</option><option value="CONFIRMED">CONFIRMED</option><option value="CANCELLED">CANCELLED</option>
+                           </select>
+                        </>
+                    )}
+
+                    <div className="flex gap-3 pt-6">
+                        <button type="button" onClick={() => setModalOpen(false)} className="flex-1 py-4 rounded-2xl font-black uppercase text-xs bg-current/5 hover:bg-current/10 transition-colors">{t.cancel}</button>
+                        <button type="submit" className="flex-1 py-4 rounded-2xl font-black uppercase text-xs text-white shadow-xl hover:brightness-110 transition-all" style={{backgroundColor: 'var(--color-primary)'}}>{t.save}</button>
+                    </div>
+                 </form>
+              </div>
+           </div>
+        )}
       </div>
-    </div>
+    </PageTransition>
   );
 }

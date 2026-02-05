@@ -37,13 +37,18 @@ model Space {
   reservations Reservation[]
 }
 
-// Configuración global (CMS)
+// ... (Tus otros modelos User, Space, Reservation igual que antes) ...
+
+// Agregamos el campo 'themeColors' para guardar tu configuración visual
 model SystemConfig {
   id           String   @id @default("config")
   appName      String   @default("Reserva App")
   logoUrl      String?
   theme        String   @default("light") 
+  themeColors  String?  // Nuevo: Guardaremos un JSON con los códigos de color
 }
+
+// ... (El resto igual) ...
 
 model Reservation {
   id        String   @id @default(cuid())
