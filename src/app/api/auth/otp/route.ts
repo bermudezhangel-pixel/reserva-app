@@ -37,7 +37,7 @@ export async function POST(req: Request) {
         // 'onboarding@resend.dev' es el correo de prueba gratis.
         // Solo funciona si envías al MISMO email con el que te registraste en Resend
         // O si verificas tu dominio en Resend (ej: hola@tuempresa.com)
-        from: 'onboarding@resend.dev', 
+        from: 'onboarding@planetaestel.com', 
         to: email,
         subject: `Tu código de acceso: ${otp}`,
         html: `

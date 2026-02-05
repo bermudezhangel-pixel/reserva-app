@@ -3,186 +3,370 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTheme } from '@/context/ThemeContext';
 import PageTransition from '@/components/PageTransition';
+import BackButton from '@/components/BackButton';
+
+// Diccionario local para esta página
+const textContent = {
+  es: {
+    welcome: "Bienvenido",
+    subWelcome: "Reserva tu espacio ideal en segundos.",
+    login: "Iniciar Sesión",
+    register: "Crear Cuenta",
+    guest: "Continuar como Invitado",
+    emailPlaceholder: "Tu Email Corporativo",
+    namePlaceholder: "Nombre Completo",
+    phonePlaceholder: "Teléfono",
+    addressPlaceholder: "Dirección Fiscal",
+    next: "Continuar",
+    back: "Volver",
+    otpTitle: "Verificación",
+    otpDesc: "Código enviado a",
+    validate: "Validar Acceso",
+    hello: "Hola",
+    selectSpace: "Elige tu Espacio",
+    price: "/hora",
+    cap: "personas",
+    bookBtn: "Confirmar Reserva",
+    logout: "Cerrar Sesión",
+    myProfile: "Mi Perfil",
+    success: "¡Reserva Confirmada!",
+    error: "Error al procesar la reserva",
+    dates: "Fechas",
+    startDate: "Inicio",
+    endDate: "Fin"
+  },
+  en: {
+    welcome: "Welcome",
+    subWelcome: "Book your ideal workspace in seconds.",
+    login: "Login",
+    register: "Create Account",
+    guest: "Continue as Guest",
+    emailPlaceholder: "Your Corporate Email",
+    namePlaceholder: "Full Name",
+    phonePlaceholder: "Phone Number",
+    addressPlaceholder: "Billing Address",
+    next: "Continue",
+    back: "Go Back",
+    otpTitle: "Verification",
+    otpDesc: "Code sent to",
+    validate: "Validate Access",
+    hello: "Hello",
+    selectSpace: "Choose your Space",
+    price: "/hour",
+    cap: "people",
+    bookBtn: "Confirm Booking",
+    logout: "Logout",
+    myProfile: "My Profile",
+    success: "Booking Confirmed!",
+    error: "Error processing booking",
+    dates: "Dates",
+    startDate: "Start",
+    endDate: "End"
+  }
+};
 
 export default function ReservePage() {
-  const { logo, theme } = useTheme(); // Usamos el logo y tema del contexto
+  const { theme, lang, logo, changeLang } = useTheme(); 
+  const t = textContent[lang as 'es' | 'en']; // Selección de idioma
   const router = useRouter();
+
+  // Estados Lógicos
+  const [step, setStep] = useState<'welcome' | 'auth' | 'otp' | 'booking'>('welcome');
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   
-  // Estados
-  const [step, setStep] = useState<'welcome' | 'login' | 'register' | 'otp' | 'booking'>('welcome');
+  // Datos
+  const [spaces, setSpaces] = useState<any[]>([]);
   const [userData, setUserData] = useState({ name: '', email: '', phone: '', address: '' });
   const [otp, setOtp] = useState('');
-  const [spaces, setSpaces] = useState<any[]>([]);
+  
+  // Selección (Aquí estaba el error antes)
   const [selectedSpace, setSelectedSpace] = useState<any>(null);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [reservationForm, setReservationForm] = useState({ startDate: '', endDate: '' });
   const [loading, setLoading] = useState(false);
 
+  // Carga Inicial
   useEffect(() => {
-    // Check sesión
+    // 1. Cargar espacios
+    fetch('/api/spaces').then(r => r.json()).then(d => setSpaces(Array.isArray(d) ? d : []));
+
+    // 2. Verificar sesión existente
     const savedEmail = localStorage.getItem('userEmail');
     if (savedEmail) {
       setUserData(prev => ({ ...prev, email: savedEmail }));
       fetch(`/api/user/profile?email=${savedEmail}`)
         .then(res => res.json())
         .then(u => {
-            if(u.name) { setUserData(prev => ({...prev, ...u})); setStep('booking'); }
+            if(u.name) { 
+                setUserData(prev => ({...prev, ...u})); 
+                setStep('booking'); 
+            }
         });
     }
-    fetch('/api/spaces').then(r => r.json()).then(d => setSpaces(Array.isArray(d) ? d : []));
   }, []);
 
-  // Lógica de autenticación
-  const handleAuth = async (type: 'login' | 'register') => {
-    if(!userData.email) return alert("Email requerido");
+  // --- HANDLERS ---
+  const handleAuthStart = (mode: 'login' | 'register') => {
+    setAuthMode(mode);
+    setStep('auth');
+  };
+
+  const handleSendOtp = async () => {
+    if(!userData.email) return alert("Email required");
     setLoading(true);
-    if(type === 'register') await fetch('/api/users', { method: 'POST', body: JSON.stringify({...userData, role:'USER'}) });
-    await fetch('/api/auth/otp', { method: 'POST', body: JSON.stringify({ email: userData.email }) });
+    
+    if(authMode === 'register') {
+        await fetch('/api/users', { method: 'POST', body: JSON.stringify({...userData, role: 'USER'}) });
+    }
+    
+    const res = await fetch('/api/auth/otp', { method: 'POST', body: JSON.stringify({ email: userData.email }) });
     setLoading(false);
-    setStep('otp');
+    
+    if(res.ok) setStep('otp');
+    else alert("Error sending code");
   };
 
-  const verifyOtp = async () => {
+  const handleVerifyOtp = async () => {
+    setLoading(true);
     const res = await fetch('/api/auth/verify', { method: 'POST', body: JSON.stringify({ email: userData.email, otp }) });
+    setLoading(false);
+
     if (res.ok) {
-        localStorage.setItem('userEmail', userData.email);
-        if(userData.address) await fetch('/api/user/profile', { method: 'PUT', body: JSON.stringify(userData) });
-        setStep('booking');
-    } else { alert("Código incorrecto"); }
+      localStorage.setItem('userEmail', userData.email);
+      if(userData.address && authMode === 'register') {
+         await fetch('/api/user/profile', { method: 'PUT', body: JSON.stringify(userData) });
+      }
+      setStep('booking');
+    } else {
+      alert("Invalid Code");
+    }
   };
 
-  const confirmBooking = async () => {
-     const res = await fetch('/api/reservations', {
-        method: 'POST', 
-        body: JSON.stringify({ spaceId: selectedSpace.id, userEmail: userData.email, ...reservationForm })
-     });
-     if(res.ok) { alert("¡Reserva confirmada!"); router.push('/profile'); }
-     else { alert("Error al reservar"); }
+  const handleBooking = async () => {
+    if(!selectedSpace?.id) return; // PROTECCIÓN CONTRA EL ERROR NULL
+    
+    const res = await fetch('/api/reservations', {
+       method: 'POST',
+       body: JSON.stringify({ 
+           spaceId: selectedSpace.id, 
+           userEmail: userData.email, 
+           ...reservationForm 
+       })
+    });
+
+    if(res.ok) {
+        alert(t.success);
+        router.push('/profile');
+    } else {
+        alert(t.error);
+    }
   };
 
-  // Estilos dinámicos
-  const glassCard = theme === 'dark' ? 'bg-black/40 border-white/10 text-white' : 'bg-white/80 border-white text-slate-900';
-  const primaryColor = 'var(--color-primary)';
+  // Botón Atrás Personalizado
+  const handleBack = () => {
+    if (step === 'booking') {
+        if (confirm("¿Cerrar sesión?")) {
+            localStorage.clear();
+            setStep('welcome');
+        }
+    } else if (step === 'otp') setStep('auth');
+    else if (step === 'auth') setStep('welcome');
+  };
+
+  // Estilos
+  const glassClass = "backdrop-blur-2xl border border-white/20 shadow-2xl transition-all duration-500 bg-white/80 dark:bg-black/40 text-[var(--text-main)]";
+  const primaryBtn = "bg-[var(--color-primary)] text-white shadow-lg hover:scale-[1.02] hover:brightness-110 active:scale-95 transition-all";
 
   return (
     <PageTransition>
-      <div className="min-h-screen flex flex-col md:flex-row font-sans overflow-hidden">
+      <div className="min-h-screen flex flex-col lg:flex-row font-sans overflow-hidden">
         
-        {/* --- COLUMNA IZQUIERDA: BRANDING --- */}
-        <div className="md:w-1/2 p-8 md:p-16 flex flex-col justify-between relative overflow-hidden bg-slate-100 dark:bg-slate-900">
-           {/* Fondo decorativo */}
-           <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none" style={{ background: `radial-gradient(circle at 0% 0%, ${primaryColor}, transparent 50%)` }}></div>
-           
-           <div className="relative z-10">
-              {logo && <img src={logo} alt="Logo" className="h-16 w-auto object-contain mb-8 animate-in fade-in slide-in-from-top duration-700" />}
-              <h1 className="text-5xl md:text-7xl font-black italic tracking-tighter uppercase leading-[0.9] mb-6">
-                Espacios <br/> <span style={{ color: primaryColor }}>Creativos</span>
-              </h1>
-              <p className="text-lg font-bold opacity-60 max-w-sm">La plataforma premium para gestionar tu trabajo y reuniones con estilo.</p>
-           </div>
-           
-           <div className="relative z-10 hidden md:block">
-              <p className="text-xs font-black uppercase tracking-[0.3em] opacity-40">Powered by Reserva App</p>
-           </div>
+        {/* BOTÓN ATRÁS MANUAL (Controla el flujo interno) */}
+        {step !== 'welcome' && (
+            <button onClick={handleBack} className="fixed top-6 left-6 z-50 bg-white/20 backdrop-blur-md p-3 rounded-full border border-current/10 hover:bg-white hover:text-black transition-all">
+                ⬅
+            </button>
+        )}
+
+        {/* --- COLUMNA IZQUIERDA: VISUAL --- */}
+        <div className="lg:w-5/12 relative bg-[var(--color-primary)] p-12 flex flex-col justify-between text-white overflow-hidden">
+            {/* Fondo Abstracto */}
+            <div className="absolute inset-0 bg-gradient-to-br from-black/20 to-transparent z-0"></div>
+            <div className="absolute -top-20 -left-20 w-96 h-96 bg-white/10 rounded-full blur-3xl"></div>
+            
+            <div className="relative z-10 animate-in slide-in-from-top duration-700">
+                {logo ? <img src={logo} className="h-16 w-auto object-contain mb-8 bg-white/90 p-2 rounded-xl" /> : <div className="text-4xl mb-6">💎</div>}
+                <h1 className="text-5xl lg:text-7xl font-black italic uppercase tracking-tighter leading-none">
+                    Premium <br/> Spaces
+                </h1>
+            </div>
+
+            <div className="relative z-10 hidden lg:block animate-in fade-in delay-300">
+                <p className="text-lg font-bold opacity-80 max-w-sm leading-relaxed">
+                    {lang === 'es' ? 'La experiencia de coworking definitiva. Gestiona, reserva y conecta.' : 'The ultimate coworking experience. Manage, book, and connect.'}
+                </p>
+                <div className="flex gap-2 mt-6">
+                    <button onClick={() => changeLang('es')} className={`px-3 py-1 rounded-lg text-xs font-black ${lang === 'es' ? 'bg-white text-black' : 'bg-black/20'}`}>ES</button>
+                    <button onClick={() => changeLang('en')} className={`px-3 py-1 rounded-lg text-xs font-black ${lang === 'en' ? 'bg-white text-black' : 'bg-black/20'}`}>EN</button>
+                </div>
+            </div>
         </div>
 
         {/* --- COLUMNA DERECHA: INTERACCIÓN --- */}
-        <div className="md:w-1/2 relative flex items-center justify-center p-6 md:p-12">
-           <div className={`w-full max-w-md p-8 md:p-12 rounded-[3rem] backdrop-blur-xl border shadow-2xl transition-all duration-500 ${glassCard}`}>
-              
-              {/* PASO: WELCOME */}
-              {step === 'welcome' && (
-                  <div className="space-y-6 text-center animate-in zoom-in-95 duration-500">
-                      <h2 className="text-3xl font-black uppercase">Bienvenido</h2>
-                      <div className="space-y-3">
-                          <button onClick={() => setStep('login')} style={{backgroundColor: primaryColor}} className="w-full text-white py-4 rounded-2xl font-black uppercase shadow-lg hover:brightness-110 transition-all">Iniciar Sesión</button>
-                          <button onClick={() => setStep('register')} className="w-full bg-black/5 py-4 rounded-2xl font-black uppercase hover:bg-black/10 transition-all">Crear Cuenta</button>
-                      </div>
-                  </div>
-              )}
+        <div className="lg:w-7/12 relative flex items-center justify-center p-6 lg:p-12 bg-[var(--bg-primary)]">
+            <div className={`w-full max-w-xl p-8 lg:p-12 rounded-[2.5rem] ${glassClass}`}>
+                
+                {/* 1. WELCOME */}
+                {step === 'welcome' && (
+                    <div className="text-center space-y-8 animate-in zoom-in-95 duration-500">
+                        <div>
+                            <h2 className="text-4xl font-black uppercase tracking-tight mb-2">{t.welcome}</h2>
+                            <p className="opacity-60 font-medium">{t.subWelcome}</p>
+                        </div>
+                        <div className="space-y-4">
+                            <button onClick={() => handleAuthStart('login')} className={`w-full py-5 rounded-2xl font-black uppercase text-sm ${primaryBtn}`}>{t.login}</button>
+                            <button onClick={() => handleAuthStart('register')} className="w-full py-5 rounded-2xl font-black uppercase text-sm bg-current/5 hover:bg-current/10 transition-all">{t.register}</button>
+                        </div>
+                    </div>
+                )}
 
-              {/* PASO: LOGIN/REGISTER */}
-              {(step === 'login' || step === 'register') && (
-                  <div className="space-y-4 animate-in slide-in-from-right duration-300">
-                      <h2 className="text-2xl font-black uppercase mb-6">{step === 'login' ? 'Acceder' : 'Registro'}</h2>
-                      {step === 'register' && (
-                          <div className="grid grid-cols-2 gap-3">
-                              <input placeholder="Nombre" className="p-4 rounded-2xl bg-black/5 font-bold outline-none" onChange={e => setUserData({...userData, name: e.target.value})} />
-                              <input placeholder="Teléfono" className="p-4 rounded-2xl bg-black/5 font-bold outline-none" onChange={e => setUserData({...userData, phone: e.target.value})} />
-                          </div>
-                      )}
-                      <input placeholder="Email Corporativo" className="w-full p-4 rounded-2xl bg-black/5 font-bold outline-none" onChange={e => setUserData({...userData, email: e.target.value})} />
-                      {step === 'register' && <input placeholder="Dirección" className="w-full p-4 rounded-2xl bg-black/5 font-bold outline-none" onChange={e => setUserData({...userData, address: e.target.value})} />}
-                      
-                      <button onClick={() => handleAuth(step)} style={{backgroundColor: primaryColor}} className="w-full text-white py-4 rounded-2xl font-black uppercase shadow-lg mt-4">
-                          {loading ? 'Procesando...' : 'Continuar'}
-                      </button>
-                      <button onClick={() => setStep('welcome')} className="w-full text-center text-xs font-bold opacity-50 uppercase mt-4">Volver</button>
-                  </div>
-              )}
+                {/* 2. AUTH (Login/Register) */}
+                {step === 'auth' && (
+                    <div className="space-y-6 animate-in slide-in-from-right duration-300">
+                        <div className="text-center mb-8">
+                            <h2 className="text-3xl font-black uppercase">{authMode === 'login' ? t.login : t.register}</h2>
+                        </div>
+                        
+                        {authMode === 'register' && (
+                            <div className="grid grid-cols-2 gap-4">
+                                <input placeholder={t.namePlaceholder} className="w-full p-4 rounded-2xl bg-current/5 font-bold outline-none focus:ring-2 ring-[var(--color-primary)]" onChange={e => setUserData({...userData, name: e.target.value})} />
+                                <input placeholder={t.phonePlaceholder} className="w-full p-4 rounded-2xl bg-current/5 font-bold outline-none focus:ring-2 ring-[var(--color-primary)]" onChange={e => setUserData({...userData, phone: e.target.value})} />
+                            </div>
+                        )}
+                        
+                        <input type="email" placeholder={t.emailPlaceholder} className="w-full p-4 rounded-2xl bg-current/5 font-bold outline-none focus:ring-2 ring-[var(--color-primary)]" onChange={e => setUserData({...userData, email: e.target.value})} />
+                        
+                        {authMode === 'register' && (
+                            <input placeholder={t.addressPlaceholder} className="w-full p-4 rounded-2xl bg-current/5 font-bold outline-none focus:ring-2 ring-[var(--color-primary)]" onChange={e => setUserData({...userData, address: e.target.value})} />
+                        )}
 
-              {/* PASO: OTP */}
-              {step === 'otp' && (
-                  <div className="space-y-6 text-center animate-in zoom-in duration-300">
-                      <h2 className="text-2xl font-black">Código de Verificación</h2>
-                      <p className="text-xs opacity-60">Enviado a {userData.email}</p>
-                      <input maxLength={6} className="w-full text-center text-4xl tracking-[0.5em] font-black p-4 rounded-2xl bg-black/5 outline-none" onChange={e => setOtp(e.target.value)} />
-                      <button onClick={verifyOtp} style={{backgroundColor: primaryColor}} className="w-full text-white py-4 rounded-2xl font-black uppercase shadow-lg">Validar</button>
-                  </div>
-              )}
+                        <button onClick={handleSendOtp} disabled={loading} className={`w-full py-4 rounded-2xl font-black uppercase text-sm mt-4 ${primaryBtn}`}>
+                            {loading ? '...' : t.next} ➜
+                        </button>
+                    </div>
+                )}
 
-              {/* PASO: BOOKING */}
-              {step === 'booking' && (
-                  <div className="space-y-6 animate-in fade-in duration-500">
-                      <div className="flex justify-between items-center">
-                          <h2 className="text-xl font-black italic">Hola, {userData.name?.split(' ')[0]}</h2>
-                          <button onClick={() => router.push('/profile')} className="text-[10px] font-black uppercase opacity-50 border border-current px-3 py-1 rounded-full">Mi Perfil</button>
-                      </div>
+                {/* 3. OTP */}
+                {step === 'otp' && (
+                    <div className="text-center space-y-8 animate-in zoom-in duration-300">
+                        <div>
+                            <h2 className="text-3xl font-black uppercase">{t.otpTitle}</h2>
+                            <p className="opacity-60 text-sm mt-2">{t.otpDesc} <strong>{userData.email}</strong></p>
+                        </div>
+                        <input autoFocus maxLength={6} className="w-full text-center text-5xl tracking-[0.5em] font-black p-4 rounded-2xl bg-current/5 outline-none focus:ring-2 ring-[var(--color-primary)]" onChange={e => setOtp(e.target.value)} />
+                        <button onClick={handleVerifyOtp} disabled={loading} className={`w-full py-4 rounded-2xl font-black uppercase text-sm ${primaryBtn}`}>
+                            {loading ? '...' : t.validate}
+                        </button>
+                    </div>
+                )}
 
-                      <div className="space-y-2">
-                          <label className="text-[10px] font-black uppercase opacity-50 ml-2">Elige tu espacio</label>
-                          <select className="w-full p-4 rounded-2xl bg-black/5 font-bold outline-none cursor-pointer appearance-none" onChange={(e) => {
-                              const s = spaces.find(sp => sp.id === e.target.value);
-                              setSelectedSpace(s); setCurrentImageIndex(0);
-                          }}>
-                              <option value="">Seleccionar...</option>
-                              {spaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                          </select>
-                      </div>
+                {/* 4. BOOKING (Donde estaba el error) */}
+                {step === 'booking' && (
+                    <div className="space-y-6 animate-in fade-in duration-500">
+                        {/* Header Usuario */}
+                        <div className="flex justify-between items-center pb-4 border-b border-current/10">
+                            <div>
+                                <h2 className="text-2xl font-black italic">{t.hello}, {userData.name?.split(' ')[0]} 👋</h2>
+                                <p className="text-[10px] font-black uppercase opacity-40 tracking-widest">{t.selectSpace}</p>
+                            </div>
+                            <button onClick={() => router.push('/profile')} className="bg-current/5 hover:bg-[var(--color-primary)] hover:text-white px-4 py-2 rounded-full text-[10px] font-black uppercase transition-all">
+                                👤 {t.myProfile}
+                            </button>
+                        </div>
 
-                      {selectedSpace && (
-                          <div className="space-y-4">
-                              {/* Carrusel */}
-                              <div className="relative h-40 rounded-2xl overflow-hidden bg-black/10 group">
-                                  {selectedSpace.images?.length > 0 ? (
-                                      <>
-                                        <img src={selectedSpace.images[currentImageIndex]} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
-                                        {selectedSpace.images.length > 1 && (
-                                            <>
-                                                <button onClick={() => setCurrentImageIndex(i => (i - 1 + selectedSpace.images.length) % selectedSpace.images.length)} className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 p-2 rounded-full text-xs">◀</button>
-                                                <button onClick={() => setCurrentImageIndex(i => (i + 1) % selectedSpace.images.length)} className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/80 p-2 rounded-full text-xs">▶</button>
-                                            </>
-                                        )}
-                                      </>
-                                  ) : <div className="flex items-center justify-center h-full opacity-30 font-black">SIN FOTO</div>}
-                                  <div className="absolute bottom-2 right-2 bg-white/90 px-2 py-1 rounded text-[10px] font-black shadow-sm">${selectedSpace.pricePerHour}/h</div>
-                              </div>
-                              
-                              <div className="grid grid-cols-2 gap-3">
-                                  <input type="date" className="p-3 rounded-2xl bg-black/5 font-bold outline-none text-xs" onChange={e => setReservationForm({...reservationForm, startDate: e.target.value})} />
-                                  <input type="date" className="p-3 rounded-2xl bg-black/5 font-bold outline-none text-xs" onChange={e => setReservationForm({...reservationForm, endDate: e.target.value})} />
-                              </div>
+                        {/* Selector Visual de Espacios (Grid) */}
+                        {!selectedSpace ? (
+                            <div className="grid grid-cols-2 gap-4 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
+                                {spaces.map(s => (
+                                    <div 
+                                        key={s.id} 
+                                        onClick={() => { setSelectedSpace(s); setCurrentImageIndex(0); }}
+                                        className="group cursor-pointer rounded-2xl overflow-hidden border border-current/10 hover:border-[var(--color-primary)] transition-all bg-white/50 dark:bg-black/20"
+                                    >
+                                        <div className="h-28 bg-current/10 relative">
+                                            {s.images?.[0] ? (
+                                                <img src={s.images[0]} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center opacity-30 text-2xl">🏢</div>
+                                            )}
+                                        </div>
+                                        <div className="p-3">
+                                            <h3 className="font-bold text-sm leading-tight">{s.name}</h3>
+                                            <p className="text-[10px] opacity-60 mt-1">${s.pricePerHour}{t.price}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            // Vista Detalle del Espacio (Seleccionado)
+                            <div className="space-y-4 animate-in zoom-in-95">
+                                {/* Carrusel */}
+                                <div className="relative h-56 rounded-3xl overflow-hidden bg-black/10 group shadow-lg">
+                                    {selectedSpace.images?.length > 0 ? (
+                                        <>
+                                            <img src={selectedSpace.images[currentImageIndex]} className="w-full h-full object-cover" />
+                                            {selectedSpace.images.length > 1 && (
+                                                <>
+                                                    <button onClick={() => setCurrentImageIndex(i => (i - 1 + selectedSpace.images.length) % selectedSpace.images.length)} className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 text-black p-2 rounded-full text-xs hover:scale-110 transition-transform">◀</button>
+                                                    <button onClick={() => setCurrentImageIndex(i => (i + 1) % selectedSpace.images.length)} className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/80 text-black p-2 rounded-full text-xs hover:scale-110 transition-transform">▶</button>
+                                                </>
+                                            )}
+                                        </>
+                                    ) : <div className="w-full h-full flex items-center justify-center text-4xl opacity-20">📷</div>}
+                                    
+                                    <button onClick={() => setSelectedSpace(null)} className="absolute top-3 left-3 bg-black/50 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase backdrop-blur-md hover:bg-black/70">
+                                        ⬅ {t.back}
+                                    </button>
+                                </div>
+                                
+                                <div>
+                                    <div className="flex justify-between items-end">
+                                        <h2 className="text-3xl font-black uppercase leading-none">{selectedSpace.name}</h2>
+                                        <p className="text-xl font-bold text-[var(--color-primary)]">${selectedSpace.pricePerHour}</p>
+                                    </div>
+                                    <p className="text-xs opacity-60 mt-2 line-clamp-2">{selectedSpace.description || "Sin descripción disponible."}</p>
+                                    
+                                    {/* Equipamiento Tags */}
+                                    {selectedSpace.equipment && (
+                                        <div className="flex flex-wrap gap-2 mt-3">
+                                            {selectedSpace.equipment.split(',').map((eq: string, i: number) => (
+                                                <span key={i} className="text-[9px] font-black bg-current/5 px-2 py-1 rounded border border-current/10 uppercase">{eq.trim()}</span>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
 
-                              <button onClick={confirmBooking} style={{backgroundColor: primaryColor}} className="w-full text-white py-4 rounded-2xl font-black uppercase shadow-lg hover:scale-105 transition-all">
-                                  Confirmar Reserva
-                              </button>
-                          </div>
-                      )}
-                  </div>
-              )}
-           </div>
+                                {/* Formulario Fechas */}
+                                <div className="bg-current/5 p-4 rounded-2xl grid grid-cols-2 gap-4">
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] font-black uppercase opacity-50 ml-2">{t.startDate}</label>
+                                        <input type="date" className="w-full p-2 bg-transparent font-bold outline-none border-b-2 border-current/10 focus:border-[var(--color-primary)]" onChange={e => setReservationForm({...reservationForm, startDate: e.target.value})} />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] font-black uppercase opacity-50 ml-2">{t.endDate}</label>
+                                        <input type="date" className="w-full p-2 bg-transparent font-bold outline-none border-b-2 border-current/10 focus:border-[var(--color-primary)]" onChange={e => setReservationForm({...reservationForm, endDate: e.target.value})} />
+                                    </div>
+                                </div>
+
+                                <button onClick={handleBooking} className={`w-full py-4 rounded-2xl font-black uppercase text-sm shadow-xl ${primaryBtn}`}>
+                                    {t.bookBtn}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
         </div>
-
       </div>
     </PageTransition>
   );
