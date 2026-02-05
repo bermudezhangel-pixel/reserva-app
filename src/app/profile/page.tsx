@@ -4,98 +4,133 @@ import { useRouter } from 'next/navigation';
 
 export default function ProfilePage() {
   const [user, setUser] = useState<any>(null);
-  const [reservations, setReservations] = useState([]);
+  const [reservations, setReservations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  useEffect(() => {
-    // Intentamos recuperar la sesión
-    const email = localStorage.getItem('userEmail');
-    const sessionExpiry = localStorage.getItem('sessionExpiry');
+  // [FUNCIÓN MÁGICA PARA EVITAR INVALID DATE]
+  const formatDate = (dateString: any) => {
+    if (!dateString) return "---";
+    try {
+      const d = new Date(dateString);
+      if (isNaN(d.getTime())) return "Pendiente";
+      // Formato simple: DD/MM/AAAA
+      return d.toLocaleDateString('es-ES', { 
+        day: '2-digit', 
+        month: '2-digit', 
+        year: 'numeric' 
+      });
+    } catch {
+      return "Error fecha";
+    }
+  };
 
-    // Si no hay email o la sesión expiró, al login
-    if (!email || (sessionExpiry && Date.now() > parseInt(sessionExpiry))) {
-      localStorage.clear();
-      router.push('/reserve');
+  useEffect(() => {
+    const email = localStorage.getItem('userEmail');
+    if (!email) {
+      router.push('/reserve'); // Si no hay email, mandar al login
       return;
     }
 
-    // Cargar datos del perfil y sus reservas
-    Promise.all([
-      fetch(`/api/user/profile?email=${email}`).then(res => res.json()),
-      fetch(`/api/user/reservations?email=${email}`).then(res => res.json())
-    ]).then(([userData, resData]) => {
-      setUser(userData);
-      setReservations(resData);
-      setLoading(false);
-    });
+    const cargarDatos = async () => {
+      try {
+        // 1. Cargar datos del usuario
+        const resUser = await fetch(`/api/user/profile?email=${email}`);
+        const userData = await resUser.json();
+        setUser(userData);
+
+        // 2. Cargar reservas (usando la nueva API blindada)
+        const resBookings = await fetch(`/api/user-bookings?email=${email}`);
+        const bookingsData = await resBookings.json();
+        setReservations(Array.isArray(bookingsData) ? bookingsData : []);
+      } catch (error) {
+        console.error("Error cargando perfil:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    cargarDatos();
   }, [router]);
 
-  if (loading) return <div className="p-20 text-center font-bold">Cargando tu espacio...</div>;
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 font-black text-blue-600 animate-pulse uppercase tracking-widest">
+      Cargando Perfil...
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-10 font-sans text-slate-900">
-      <div className="max-w-6xl mx-auto space-y-8">
+    <div className="min-h-screen bg-slate-50 p-4 font-sans text-slate-900">
+      <div className="max-w-md mx-auto space-y-6">
         
-        {/* Encabezado con Saludo */}
-        <div className="flex justify-between items-center bg-white p-8 rounded-3xl shadow-sm border">
-          <div>
-            <h1 className="text-3xl font-black">¡Hola, {user?.name || 'Usuario'}! 👋</h1>
-            <p className="text-slate-500">Bienvenido a tu panel de gestión.</p>
-          </div>
-          <button onClick={() => router.push('/reserve')} className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-bold shadow-lg">Nueva Reserva</button>
+        {/* TARJETA DE USUARIO */}
+        <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border-t-8 border-blue-600 text-center relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-4 opacity-10 text-9xl">👤</div>
+          <h1 className="text-3xl font-black italic mb-1">{user?.name || 'Usuario'}</h1>
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-6">{user?.email}</p>
+          
+          <button 
+            onClick={() => router.push('/reserve')} 
+            className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-600 transition-all shadow-lg"
+          >
+            + Nueva Reserva
+          </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Columna Izquierda: Mis Reservas */}
-          <div className="lg:col-span-2 space-y-6">
-            <h2 className="text-xl font-black flex items-center gap-2">
-              <span className="bg-blue-100 p-2 rounded-lg text-blue-600">📅</span> 
-              Mis Reservas
-            </h2>
-            {reservations.length === 0 ? (
-              <div className="bg-white p-10 rounded-3xl border border-dashed text-center text-slate-400">
-                Aún no tienes reservas registradas.
-              </div>
-            ) : (
-              <div className="grid gap-4">
-                {reservations.map((res: any) => (
-                  <div key={res.id} className="bg-white p-6 rounded-2xl shadow-sm border flex justify-between items-center">
-                    <div>
-                      <p className="font-black text-lg">{res.space?.name}</p>
-                      <p className="text-slate-500 text-sm">
-                        {new Date(res.date).toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                      </p>
-                    </div>
-                    <span className={`px-4 py-1 rounded-full text-xs font-bold ${res.status === 'CONFIRMED' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                      {res.status}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Columna Derecha: Datos de Facturación */}
-          <div className="bg-white p-8 rounded-3xl shadow-sm border h-fit">
-            <h2 className="text-xl font-black mb-6">Datos Fiscales</h2>
-            <div className="space-y-4 text-sm">
-              <div>
-                <p className="text-slate-400 font-bold uppercase text-[10px]">Empresa</p>
-                <p className="font-medium">{user?.company || 'No definida'}</p>
-              </div>
-              <div>
-                <p className="text-slate-400 font-bold uppercase text-[10px]">Tax ID / RUC</p>
-                <p className="font-medium">{user?.taxId}</p>
-              </div>
-              <div>
-                <p className="text-slate-400 font-bold uppercase text-[10px]">Dirección</p>
-                <p className="font-medium">{user?.billingAddress}, {user?.billingCity}</p>
-              </div>
-              <button onClick={() => alert("Función para editar en desarrollo")} className="w-full mt-4 text-blue-600 font-bold text-xs hover:underline">Editar mis datos</button>
+        {/* LISTA DE RESERVAS */}
+        <div>
+          <h2 className="text-xl font-black italic mb-4 ml-2 uppercase text-slate-400">Mis Reservas 📅</h2>
+          
+          {reservations.length === 0 ? (
+            <div className="text-center p-10 bg-white rounded-3xl border-2 border-dashed border-slate-200">
+              <p className="text-slate-400 font-bold text-sm">Aún no tienes reservas.</p>
             </div>
-          </div>
+          ) : (
+            <div className="space-y-4">
+              {reservations.map((res: any) => (
+                <div key={res.id} className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 relative group overflow-hidden">
+                  {/* Borde de estado lateral */}
+                  <div className={`absolute left-0 top-0 bottom-0 w-2 ${
+                    res.status === 'CONFIRMED' ? 'bg-green-400' : 
+                    res.status === 'CANCELLED' ? 'bg-red-400' : 'bg-amber-400'
+                  }`} />
+
+                  <div className="pl-4">
+                    <div className="flex justify-between items-start mb-2">
+                      <h3 className="font-black text-lg leading-none">{res.space?.name || 'Espacio'}</h3>
+                      <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-tighter ${
+                        res.status === 'CONFIRMED' ? 'bg-green-100 text-green-700' : 
+                        res.status === 'CANCELLED' ? 'bg-red-50 text-red-600' : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        {res.status === 'CONFIRMED' ? 'CONFIRMADA' : res.status}
+                      </span>
+                    </div>
+
+                    {/* SECCIÓN DE FECHAS CORREGIDA */}
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-500 mb-3 bg-slate-50 p-2 rounded-xl inline-flex">
+                      <span>📅 {formatDate(res.startDate)}</span>
+                      <span className="text-blue-400">➜</span>
+                      <span>{formatDate(res.endDate)}</span>
+                    </div>
+
+                    <p className="text-[10px] text-slate-300 font-bold uppercase tracking-widest">
+                      ID: {res.id.slice(-6)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+
+        {/* BOTÓN CERRAR SESIÓN */}
+        <button 
+          onClick={() => { localStorage.clear(); router.push('/reserve'); }} 
+          className="w-full text-center text-[10px] font-black text-slate-300 uppercase hover:text-red-400 transition-colors py-4"
+        >
+          Cerrar Sesión
+        </button>
+
       </div>
     </div>
   );

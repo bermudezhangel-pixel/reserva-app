@@ -1,24 +1,29 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
-// Obtener todos los espacios
 export async function GET() {
-  const spaces = await prisma.space.findMany({ orderBy: { name: 'asc' } });
+  const spaces = await prisma.space.findMany();
   return NextResponse.json(spaces);
 }
 
-// Crear un nuevo espacio
 export async function POST(req: Request) {
-  const body = await req.json();
-  const space = await prisma.space.create({
-    data: {
-      name: body.name,
-      description: body.description,
-      capacity: parseInt(body.capacity),
-      pricePerHour: parseFloat(body.pricePerHour),
-    }
-  });
-  return NextResponse.json(space);
+  try {
+    const body = await req.json();
+    
+    const newSpace = await prisma.space.create({
+      data: {
+        name: body.name,
+        description: body.description || "",
+        // Aseguramos conversión de números
+        capacity: parseInt(body.capacity),
+        pricePerHour: parseFloat(body.pricePerHour),
+        image: body.image || "",      
+        equipment: body.equipment || "" 
+      }
+    });
+    return NextResponse.json(newSpace);
+  } catch (error) {
+    console.error("Error creando espacio:", error);
+    return NextResponse.json({ error: "Error creando espacio" }, { status: 500 });
+  }
 }
-
-// Editar y Eliminar (Usaremos un endpoint dinámico abajo)

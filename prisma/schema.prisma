@@ -7,65 +7,57 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// [SECCIÓN: ESPACIOS DISPONIBLES]
+enum Role {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+model User {
+  id            String        @id @default(cuid())
+  email         String        @unique
+  name          String?
+  phone         String?
+  address       String?       // Nuevo: Dirección de facturación
+  role          Role          @default(USER)
+  createdAt     DateTime      @default(now())
+  reservations  Reservation[]
+  otp           String?       
+  otpExpires    DateTime?     
+}
+
 model Space {
   id           String        @id @default(cuid())
-  name         String
-  description  String
+  name         String        @unique
+  description  String?       
+  images       String[]      // CAMBIO: Array de strings para el carrusel
+  equipment    String?       
   capacity     Int
   pricePerHour Float
   reservations Reservation[]
 }
 
-// [SECCIÓN: MODELO DE RESERVA POR RANGO]
+// Configuración global (CMS)
+model SystemConfig {
+  id           String   @id @default("config")
+  appName      String   @default("Reserva App")
+  logoUrl      String?
+  theme        String   @default("light") 
+}
+
 model Reservation {
-  id        String            @id @default(cuid())
-  spaceId   String
-  space     Space             @relation(fields: [spaceId], references: [id])
-  userId    String?
-  user      User?             @relation(fields: [userId], references: [id])
-  
-  // Datos del cliente en el momento de la reserva
-  userName  String
-  userEmail String
-  userPhone String
-  
-  // Rango de fechas (NUEVO)
+  id        String   @id @default(cuid())
   startDate DateTime
   endDate   DateTime
-  
-  // Tiempos (puedes dejarlos como referencia o usarlos para horas específicas en el rango)
+  status    String   @default("PENDING") 
+  spaceId   String
+  space     Space    @relation(fields: [spaceId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  userEmail String
+  userName  String?
+  userPhone String?
+  createdAt DateTime @default(now())
   startTime String?
   endTime   String?
-  
-  status    ReservationStatus @default(PENDING)
-  createdAt DateTime          @default(now())
-}
-
-enum ReservationStatus {
-  PENDING
-  CONFIRMED
-  CANCELLED
-}
-
-// [SECCIÓN: USUARIOS Y FACTURACIÓN]
-model User {
-  id                String        @id @default(cuid())
-  email             String        @unique
-  name              String?
-  phone             String?
-  company           String?
-  
-  // Datos Fiscales
-  taxId             String?       // RUC / NIT / CIF
-  billingAddress    String?
-  billingCity       String?
-  
-  // Auth y Sesión
-  otp               String?
-  otpExpires        DateTime?
-  password          String?       
-  
-  reservations      Reservation[]
-  createdAt         DateTime      @default(now())
 }
