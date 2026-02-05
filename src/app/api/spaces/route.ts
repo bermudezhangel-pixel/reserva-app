@@ -14,10 +14,10 @@ export async function POST(req: Request) {
       data: {
         name: body.name,
         description: body.description || "",
-        // Aseguramos conversión de números
         capacity: parseInt(body.capacity),
         pricePerHour: parseFloat(body.pricePerHour),
-        image: body.image || "",      
+        // CORRECCIÓN CRÍTICA: Guardamos como array de strings
+        images: body.image ? [body.image] : [],     
         equipment: body.equipment || "" 
       }
     });
